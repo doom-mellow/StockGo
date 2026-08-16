@@ -3,7 +3,7 @@ from pathlib import Path
 
 import streamlit as st
 import pandas as pd
-
+import joblib
 
 # ==========================================================
 # PROJECT PATH
@@ -14,9 +14,30 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
+# ==========================================================
+# PROJECT IMPORTS
+# ==========================================================
+
 from src.models.predict import (
     load_model,
     predict_next_day
+)
+
+from src.visualization.plots import (
+    get_feature_importance_data
+)
+
+from src.evaluation.backtesting import (
+    backtest_strategy,
+    print_backtest_results
+)
+
+from src.evaluation.model_comparison import (
+    compare_models
+)
+
+from src.evaluation.walk_forward import (
+    walk_forward_validation
 )
 
 
@@ -38,7 +59,7 @@ st.set_page_config(
 st.title("📈 StockGo")
 
 st.subheader(
-    "AI-Powered Stock Return Prediction"
+    "AI-Powered Multi-Stock Return Prediction"
 )
 
 st.write(
@@ -67,15 +88,41 @@ MODEL_PATH = (
 
 
 # ==========================================================
+# FEATURE COLUMNS
+# ==========================================================
+
+FEATURE_COLUMNS = [
+    "Open",
+    "High",
+    "Low",
+    "Close",
+    "Volume",
+    "Daily_Return",
+    "Return_5D",
+    "Price_Change",
+    "SMA_20",
+    "SMA_50",
+    "EMA_20",
+    "Volatility_20",
+    "Bollinger_Middle",
+    "Bollinger_Upper",
+    "Bollinger_Lower",
+    "RSI_14",
+    "MACD",
+    "MACD_Signal",
+    "MACD_Histogram",
+    "Volume_Change"
+]
+
+
+# ==========================================================
 # LOAD DATA
 # ==========================================================
 
 @st.cache_data
 def load_data():
 
-    data = pd.read_csv(
-        DATA_PATH
-    )
+    data = pd.read_csv(DATA_PATH)
 
     data["Date"] = pd.to_datetime(
         data["Date"]
@@ -96,6 +143,10 @@ def load_stock_model():
     )
 
 
+# ==========================================================
+# LOAD APPLICATION DATA
+# ==========================================================
+
 data = load_data()
 
 model = load_stock_model()
@@ -107,7 +158,7 @@ model = load_stock_model()
 
 st.divider()
 
-st.subheader("Select a Stock")
+st.subheader("🎯 Select a Stock")
 
 available_stocks = sorted(
     data["Ticker"].unique()
@@ -120,7 +171,7 @@ selected_stock = st.selectbox(
 
 
 # ==========================================================
-# FILTER SELECTED STOCK
+# FILTER STOCK
 # ==========================================================
 
 stock_data = data[
@@ -141,37 +192,28 @@ result = predict_next_day(
     model
 )
 
+current_price = result["current_price"]
 
-current_price = result[
-    "current_price"
-]
+predicted_return = result["predicted_return"]
 
-predicted_return = result[
-    "predicted_return"
-]
+predicted_price = result["predicted_price"]
 
-predicted_price = result[
-    "predicted_price"
-]
-
-direction = result[
-    "direction"
-]
+direction = result["direction"]
 
 
 # ==========================================================
-# PREDICTION HEADER
+# PREDICTION SECTION
 # ==========================================================
 
 st.divider()
 
-st.subheader(
+st.header(
     f"📊 {selected_stock} Prediction"
 )
 
 
 # ==========================================================
-# DISPLAY METRICS
+# MAIN METRICS
 # ==========================================================
 
 col1, col2, col3, col4 = st.columns(4)
@@ -188,8 +230,7 @@ with col1:
 with col2:
 
     price_change = (
-        predicted_price
-        - current_price
+        predicted_price - current_price
     )
 
     st.metric(
@@ -219,8 +260,6 @@ with col4:
 # PREDICTION MESSAGE
 # ==========================================================
 
-st.divider()
-
 if direction == "UP":
 
     st.success(
@@ -241,25 +280,22 @@ else:
 
 
 # ==========================================================
-# RECENT PRICE HISTORY
+# PRICE HISTORY
 # ==========================================================
 
 st.divider()
 
-st.subheader(
+st.header(
     f"📈 {selected_stock} — Recent Price History"
 )
-
 
 recent_data = stock_data[
     ["Date", "Close"]
 ].tail(30)
 
-
 recent_data = recent_data.set_index(
     "Date"
 )
-
 
 st.line_chart(
     recent_data["Close"]
@@ -272,17 +308,13 @@ st.line_chart(
 
 st.divider()
 
-st.subheader(
-    "Technical Indicators"
-)
+st.header("📐 Technical Indicators")
 
+latest = stock_data.iloc[-1]
 
 indicator_col1, indicator_col2, indicator_col3, indicator_col4 = (
     st.columns(4)
 )
-
-
-latest = stock_data.iloc[-1]
 
 
 with indicator_col1:
@@ -312,21 +344,18 @@ with indicator_col3:
 with indicator_col4:
 
     st.metric(
-        "Volatility (20D)",
+        "20D Volatility",
         f"{latest['Volatility_20'] * 100:.2f}%"
     )
 
 
 # ==========================================================
-# RECENT MARKET DATA
+# MARKET DATA
 # ==========================================================
 
 st.divider()
 
-st.subheader(
-    "Recent Market Data"
-)
-
+st.header("📋 Recent Market Data")
 
 display_columns = [
     "Date",
@@ -337,11 +366,9 @@ display_columns = [
     "Volume"
 ]
 
-
 recent_market_data = stock_data[
     display_columns
 ].tail(10).copy()
-
 
 st.dataframe(
     recent_market_data,
@@ -355,20 +382,544 @@ st.dataframe(
 
 st.divider()
 
-st.subheader(
-    "🤖 Model Information"
+st.header("🤖 Model Information")
+
+st.write(
+    "StockGo uses an XGBoost regression model trained "
+    "on historical data from multiple stocks."
 )
 
 st.write(
-    "StockGo uses a tuned XGBoost regression model "
-    "trained on historical data from multiple stocks."
+    "The model predicts the next trading day's percentage "
+    "return using price, volume, momentum, volatility, "
+    "moving averages, Bollinger Bands, RSI and MACD."
+)
+
+st.info(
+    "The prediction is a next-day return estimate. "
+    "The predicted price is calculated from the current "
+    "price and predicted return."
+)
+
+
+# ==========================================================
+# MODEL EXPLAINABILITY
+# ==========================================================
+
+st.divider()
+
+st.header("🔍 Model Explainability")
+
+st.write(
+    "The following features had the greatest overall "
+    "importance in the XGBoost model."
+)
+
+importance_data = get_feature_importance_data(
+    model,
+    FEATURE_COLUMNS,
+    top_n=10
+)
+
+st.bar_chart(
+    importance_data.set_index(
+        "Feature"
+    )["Importance"],
+    horizontal=True
+)
+
+st.dataframe(
+    importance_data,
+    width="stretch"
+)
+
+st.caption(
+    "Feature importance describes the model's overall use "
+    "of each feature. It does not imply causation."
+)
+
+
+# ==========================================================
+# BACKTESTING
+# ==========================================================
+
+st.divider()
+
+st.header("📈 Strategy Backtesting")
+
+st.write(
+    "Backtesting evaluates how a simple StockGo trading "
+    "strategy would have performed historically compared "
+    "with a Buy & Hold strategy."
+)
+
+
+@st.cache_data
+def run_backtest(selected_ticker):
+
+    ticker_data = data[
+        data["Ticker"] == selected_ticker
+    ].copy()
+
+    ticker_data = ticker_data.sort_values(
+        "Date"
+    ).reset_index(drop=True)
+
+    split_index = int(
+        len(ticker_data) * 0.8
+    )
+
+    test_data = ticker_data.iloc[
+        split_index:
+    ].copy()
+
+    test_features = test_data[
+        FEATURE_COLUMNS
+    ]
+
+    predictions = model.predict(
+        test_features
+    )
+
+    results = backtest_strategy(
+        test_data,
+        predictions
+    )
+
+    return results
+
+
+backtest_results = run_backtest(
+    selected_stock
+)
+
+
+# ==========================================================
+# BACKTEST METRICS
+# ==========================================================
+
+try:
+
+    initial_capital = backtest_results[
+        "initial_capital"
+    ]
+
+    buy_hold_value = backtest_results[
+        "buy_hold_final_value"
+    ]
+
+    strategy_value = backtest_results[
+        "strategy_final_value"
+    ]
+
+    buy_hold_return = backtest_results[
+        "buy_hold_return"
+    ]
+
+    strategy_return = backtest_results[
+        "strategy_return"
+    ]
+
+    trades = backtest_results[
+        "number_of_trades"
+    ]
+
+    winning_trades = backtest_results[
+        "winning_trades"
+    ]
+
+    win_rate = backtest_results[
+        "win_rate"
+    ]
+
+    max_drawdown = backtest_results[
+        "max_drawdown"
+    ]
+
+    sharpe_ratio = backtest_results[
+        "sharpe_ratio"
+    ]
+
+except KeyError:
+
+    # Compatibility fallback for alternate result names
+
+    initial_capital = backtest_results.get(
+        "Initial Capital",
+        10000
+    )
+
+    buy_hold_value = backtest_results.get(
+        "Final Buy & Hold",
+        0
+    )
+
+    strategy_value = backtest_results.get(
+        "Final StockGo Value",
+        0
+    )
+
+    buy_hold_return = backtest_results.get(
+        "Buy & Hold Return",
+        0
+    )
+
+    strategy_return = backtest_results.get(
+        "StockGo Return",
+        0
+    )
+
+    trades = backtest_results.get(
+        "Number of Trades",
+        0
+    )
+
+    winning_trades = backtest_results.get(
+        "Winning Trades",
+        0
+    )
+
+    win_rate = backtest_results.get(
+        "Win Rate",
+        0
+    )
+
+    max_drawdown = backtest_results.get(
+        "Maximum Drawdown",
+        0
+    )
+
+    sharpe_ratio = backtest_results.get(
+        "Sharpe Ratio",
+        0
+    )
+
+
+# ==========================================================
+# BACKTEST DISPLAY
+# ==========================================================
+
+backtest_col1, backtest_col2, backtest_col3, backtest_col4 = (
+    st.columns(4)
+)
+
+
+with backtest_col1:
+
+    st.metric(
+        "Initial Capital",
+        f"${initial_capital:,.2f}"
+    )
+
+
+with backtest_col2:
+
+    st.metric(
+        "StockGo Final Value",
+        f"${strategy_value:,.2f}"
+    )
+
+
+with backtest_col3:
+
+    st.metric(
+        "Buy & Hold",
+        f"${buy_hold_value:,.2f}"
+    )
+
+
+with backtest_col4:
+
+    st.metric(
+        "StockGo Return",
+        f"{strategy_return * 100:.2f}%"
+    )
+
+
+backtest_col5, backtest_col6, backtest_col7, backtest_col8 = (
+    st.columns(4)
+)
+
+
+with backtest_col5:
+
+    st.metric(
+        "Buy & Hold Return",
+        f"{buy_hold_return * 100:.2f}%"
+    )
+
+
+with backtest_col6:
+
+    st.metric(
+        "Win Rate",
+        f"{win_rate * 100:.2f}%"
+    )
+
+
+with backtest_col7:
+
+    st.metric(
+        "Max Drawdown",
+        f"{max_drawdown * 100:.2f}%"
+    )
+
+
+with backtest_col8:
+
+    st.metric(
+        "Sharpe Ratio",
+        f"{sharpe_ratio:.3f}"
+    )
+
+
+st.write(
+    f"**Trades:** {trades}  |  "
+    f"**Winning Trades:** {winning_trades}"
+)
+
+
+# ==========================================================
+# BACKTEST INTERPRETATION
+# ==========================================================
+
+if strategy_return > buy_hold_return:
+
+    st.success(
+        "StockGo outperformed Buy & Hold during the "
+        "selected historical test period."
+    )
+
+elif strategy_return < buy_hold_return:
+
+    st.warning(
+        "Buy & Hold outperformed StockGo during the "
+        "selected historical test period."
+    )
+
+else:
+
+    st.info(
+        "StockGo and Buy & Hold produced similar returns "
+        "during the selected test period."
+    )
+
+
+st.caption(
+    "Historical backtest results do not guarantee future performance."
+)
+
+
+# ==========================================================
+# MODEL COMPARISON
+# ==========================================================
+
+st.divider()
+
+st.header("⚖️ Model Comparison")
+
+st.write(
+    "StockGo compares multiple models against a naive "
+    "zero-return baseline."
+)
+
+
+@st.cache_data
+def load_model_comparison():
+
+    return compare_models(
+        str(DATA_PATH)
+    )
+
+
+try:
+
+    comparison_results = load_model_comparison()
+
+    st.dataframe(
+        comparison_results,
+        width="stretch"
+    )
+
+    st.subheader(
+        "📊 Model MAE Comparison"
+    )
+
+    st.bar_chart(
+        comparison_results.set_index(
+            "Model"
+        )["MAE"]
+    )
+
+    st.subheader(
+        "🎯 Directional Accuracy"
+    )
+
+    st.bar_chart(
+        comparison_results.set_index(
+            "Model"
+        )["Directional Accuracy"]
+    )
+
+except Exception as error:
+
+    st.warning(
+        f"Model comparison could not be loaded: {error}"
+    )
+
+
+# ==========================================================
+# WALK-FORWARD VALIDATION
+# ==========================================================
+
+st.divider()
+
+st.header("🔬 Walk-Forward Validation")
+
+st.write(
+    "Walk-forward validation evaluates the model using "
+    "multiple chronological train/test windows. This gives "
+    "a more realistic estimate of performance on unseen "
+    "future observations."
+)
+
+
+@st.cache_data
+def load_walk_forward():
+
+    return walk_forward_validation(
+        str(DATA_PATH)
+    )
+
+
+try:
+
+    walk_forward_results = load_walk_forward()
+
+    st.dataframe(
+        walk_forward_results,
+        width="stretch"
+    )
+
+    average_mae = (
+        walk_forward_results["MAE"].mean()
+    )
+
+    average_rmse = (
+        walk_forward_results["RMSE"].mean()
+    )
+
+    average_r2 = (
+        walk_forward_results["R2"].mean()
+    )
+
+    average_directional = (
+        walk_forward_results[
+            "Directional Accuracy"
+        ].mean()
+    )
+
+    wf_col1, wf_col2, wf_col3, wf_col4 = (
+        st.columns(4)
+    )
+
+    with wf_col1:
+
+        st.metric(
+            "Average MAE",
+            f"{average_mae:.6f}"
+        )
+
+    with wf_col2:
+
+        st.metric(
+            "Average RMSE",
+            f"{average_rmse:.6f}"
+        )
+
+    with wf_col3:
+
+        st.metric(
+            "Average R²",
+            f"{average_r2:.4f}"
+        )
+
+    with wf_col4:
+
+        st.metric(
+            "Directional Accuracy",
+            f"{average_directional * 100:.2f}%"
+        )
+
+except Exception as error:
+
+    st.warning(
+        f"Walk-forward validation could not be loaded: {error}"
+    )
+
+
+# ==========================================================
+# PROJECT SUMMARY
+# ==========================================================
+
+st.divider()
+
+st.header("📚 What StockGo Does")
+
+summary_col1, summary_col2 = st.columns(2)
+
+
+with summary_col1:
+
+    st.markdown(
+        """
+        **Data Pipeline**
+
+        - Historical multi-stock market data
+        - Data preprocessing
+        - Technical indicator generation
+        - Time-based train/test splitting
+        - Multi-stock learning
+        """
+    )
+
+
+with summary_col2:
+
+    st.markdown(
+        """
+        **Machine Learning**
+
+        - Random Forest baseline
+        - XGBoost regression
+        - Hyperparameter tuning
+        - Feature importance
+        - Walk-forward validation
+        - Strategy backtesting
+        """
+    )
+
+
+# ==========================================================
+# LIMITATIONS
+# ==========================================================
+
+st.divider()
+
+st.header("⚠️ Limitations")
+
+st.write(
+    "Stock prices are influenced by many factors that are "
+    "not represented in this model, including news, earnings, "
+    "macroeconomic conditions, market sentiment and unexpected "
+    "events."
 )
 
 st.write(
-    "The model predicts the next trading day's "
-    "percentage return using price, volume, momentum, "
-    "volatility, moving averages, Bollinger Bands, RSI "
-    "and MACD-based features."
+    "The model therefore should not be interpreted as a "
+    "guaranteed stock-picking system. Its predictions are "
+    "estimates based primarily on historical price and volume "
+    "patterns."
 )
 
 
@@ -380,6 +931,6 @@ st.divider()
 
 st.caption(
     "⚠️ StockGo is an educational machine-learning project. "
-    "Predictions are estimates based on historical market data "
-    "and should not be considered financial advice."
+    "Predictions and backtests are estimates based on historical "
+    "market data and should not be considered financial advice."
 )
