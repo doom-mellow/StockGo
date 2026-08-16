@@ -498,111 +498,92 @@ backtest_results = run_backtest(
 # BACKTEST METRICS
 # ==========================================================
 
-try:
+initial_capital = backtest_results[
+    "Initial Capital"
+]
 
-    initial_capital = backtest_results[
-        "initial_capital"
-    ]
+buy_hold_value = backtest_results[
+    "Final Buy & Hold Value"
+]
 
-    buy_hold_value = backtest_results[
-        "buy_hold_final_value"
-    ]
+strategy_value = backtest_results[
+    "Final StockGo Value"
+]
 
-    strategy_value = backtest_results[
-        "strategy_final_value"
-    ]
+buy_hold_return = backtest_results[
+    "Buy & Hold Return"
+]
 
-    buy_hold_return = backtest_results[
-        "buy_hold_return"
-    ]
+strategy_return = backtest_results[
+    "StockGo Return"
+]
 
-    strategy_return = backtest_results[
-        "strategy_return"
-    ]
+excess_return = backtest_results[
+    "Excess Return"
+]
 
-    trades = backtest_results[
-        "number_of_trades"
-    ]
+annualized_return = backtest_results[
+    "Annualized Return"
+]
 
-    winning_trades = backtest_results[
-        "winning_trades"
-    ]
+annualized_volatility = backtest_results[
+    "Annualized Volatility"
+]
 
-    win_rate = backtest_results[
-        "win_rate"
-    ]
+trades = backtest_results[
+    "Number of Trades"
+]
 
-    max_drawdown = backtest_results[
-        "max_drawdown"
-    ]
+entries = backtest_results[
+    "Entries"
+]
 
-    sharpe_ratio = backtest_results[
-        "sharpe_ratio"
-    ]
+exits = backtest_results[
+    "Exits"
+]
 
-except KeyError:
+winning_days = backtest_results[
+    "Winning Days"
+]
 
-    # Compatibility fallback for alternate result names
+losing_days = backtest_results[
+    "Losing Days"
+]
 
-    initial_capital = backtest_results.get(
-        "Initial Capital",
-        10000
-    )
+win_rate = backtest_results[
+    "Win Rate"
+]
 
-    buy_hold_value = backtest_results.get(
-        "Final Buy & Hold",
-        0
-    )
+market_exposure = backtest_results[
+    "Market Exposure"
+]
 
-    strategy_value = backtest_results.get(
-        "Final StockGo Value",
-        0
-    )
+max_drawdown = backtest_results[
+    "Maximum Drawdown"
+]
 
-    buy_hold_return = backtest_results.get(
-        "Buy & Hold Return",
-        0
-    )
+sharpe_ratio = backtest_results[
+    "Sharpe Ratio"
+]
 
-    strategy_return = backtest_results.get(
-        "StockGo Return",
-        0
-    )
+calmar_ratio = backtest_results[
+    "Calmar Ratio"
+]
 
-    trades = backtest_results.get(
-        "Number of Trades",
-        0
-    )
-
-    winning_trades = backtest_results.get(
-        "Winning Trades",
-        0
-    )
-
-    win_rate = backtest_results.get(
-        "Win Rate",
-        0
-    )
-
-    max_drawdown = backtest_results.get(
-        "Maximum Drawdown",
-        0
-    )
-
-    sharpe_ratio = backtest_results.get(
-        "Sharpe Ratio",
-        0
-    )
+transaction_cost = backtest_results[
+    "Transaction Cost"
+]
 
 
 # ==========================================================
 # BACKTEST DISPLAY
 # ==========================================================
 
+st.subheader("💰 Portfolio Performance")
+
 backtest_col1, backtest_col2, backtest_col3, backtest_col4 = (
     st.columns(4)
 )
-
 
 with backtest_col1:
 
@@ -611,7 +592,6 @@ with backtest_col1:
         f"${initial_capital:,.2f}"
     )
 
-
 with backtest_col2:
 
     st.metric(
@@ -619,14 +599,12 @@ with backtest_col2:
         f"${strategy_value:,.2f}"
     )
 
-
 with backtest_col3:
 
     st.metric(
-        "Buy & Hold",
+        "Buy & Hold Final Value",
         f"${buy_hold_value:,.2f}"
     )
-
 
 with backtest_col4:
 
@@ -636,36 +614,77 @@ with backtest_col4:
     )
 
 
-backtest_col5, backtest_col6, backtest_col7, backtest_col8 = (
+# ==========================================================
+# RETURN METRICS
+# ==========================================================
+
+st.subheader("📊 Return & Risk Metrics")
+
+metric_col1, metric_col2, metric_col3, metric_col4 = (
     st.columns(4)
 )
 
-
-with backtest_col5:
+with metric_col1:
 
     st.metric(
         "Buy & Hold Return",
         f"{buy_hold_return * 100:.2f}%"
     )
 
+with metric_col2:
 
-with backtest_col6:
+    st.metric(
+        "Excess Return",
+        f"{excess_return * 100:.2f}%"
+    )
+
+with metric_col3:
+
+    st.metric(
+        "Annualized Return",
+        f"{annualized_return * 100:.2f}%"
+    )
+
+with metric_col4:
+
+    st.metric(
+        "Annualized Volatility",
+        f"{annualized_volatility * 100:.2f}%"
+    )
+
+
+# ==========================================================
+# STRATEGY METRICS
+# ==========================================================
+
+st.subheader("🎯 Trading Statistics")
+
+strategy_col1, strategy_col2, strategy_col3, strategy_col4 = (
+    st.columns(4)
+)
+
+with strategy_col1:
 
     st.metric(
         "Win Rate",
         f"{win_rate * 100:.2f}%"
     )
 
-
-with backtest_col7:
+with strategy_col2:
 
     st.metric(
-        "Max Drawdown",
+        "Market Exposure",
+        f"{market_exposure * 100:.2f}%"
+    )
+
+with strategy_col3:
+
+    st.metric(
+        "Maximum Drawdown",
         f"{max_drawdown * 100:.2f}%"
     )
 
-
-with backtest_col8:
+with strategy_col4:
 
     st.metric(
         "Sharpe Ratio",
@@ -675,7 +694,39 @@ with backtest_col8:
 
 st.write(
     f"**Trades:** {trades}  |  "
-    f"**Winning Trades:** {winning_trades}"
+    f"**Entries:** {entries}  |  "
+    f"**Exits:** {exits}  |  "
+    f"**Winning Days:** {winning_days}  |  "
+    f"**Losing Days:** {losing_days}"
+)
+
+st.write(
+    f"**Calmar Ratio:** {calmar_ratio:.3f}  |  "
+    f"**Transaction Cost:** {transaction_cost * 100:.3f}%"
+)
+
+
+# ==========================================================
+# EQUITY CURVE
+# ==========================================================
+
+st.subheader("📈 StockGo vs Buy & Hold")
+
+equity_curve = backtest_results[
+    "Equity Curve"
+].copy()
+
+equity_curve = equity_curve.set_index(
+    "Date"
+)
+
+st.line_chart(
+    equity_curve[
+        [
+            "Buy_Hold_Equity",
+            "StockGo_Equity"
+        ]
+    ]
 )
 
 
@@ -708,8 +759,6 @@ else:
 st.caption(
     "Historical backtest results do not guarantee future performance."
 )
-
-
 # ==========================================================
 # MODEL COMPARISON
 # ==========================================================
